@@ -1,4 +1,4 @@
-// VERSÃO: 3.0 - LIMPEZA DEFINITIVA (Vercel Fix)
+// VERSÃO: 2.1 - LIMPEZA DEFINITIVA (Vercel Fix)
 import { useState } from 'react';
 import { Customer, Server, Plan } from './types';
 import { Dashboard } from './views/Dashboard';
