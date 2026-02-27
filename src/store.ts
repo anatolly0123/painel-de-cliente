@@ -137,7 +137,27 @@ export function useStore(userId: string | undefined) {
 
   const bulkUpdateCustomers = async (updater: (prev: Customer[]) => Customer[]) => {
     const next = updater(customers);
-    // This is simplified, real bulk update would need more care
+
+    // Find customers that don't exist in the current list (new ones)
+    const currentIds = new Set(customers.map(c => c.id));
+    const newCustomers = next.filter(c => !currentIds.has(c.id));
+
+    if (newCustomers.length > 0) {
+      const dbCustomers = newCustomers.map(c => ({
+        id: c.id,
+        user_id: userId,
+        name: c.name,
+        phone: c.phone,
+        server_id: c.serverId,
+        plan_id: c.planId,
+        amount_paid: c.amountPaid,
+        due_date: c.dueDate,
+        last_notified_date: c.lastNotifiedDate
+      }));
+
+      await supabase.from('customers').upsert(dbCustomers);
+    }
+
     setCustomers(next);
   };
 

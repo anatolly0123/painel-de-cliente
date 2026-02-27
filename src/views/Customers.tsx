@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import { Customer, Server, Plan, Renewal } from '../types';
 import { Plus, Edit2, Trash2, Search, Filter, Calendar, Phone, CheckCircle, XCircle, RefreshCw, Upload, Download } from 'lucide-react';
-import { format, parseISO, addMonths, isAfter, differenceInDays } from 'date-fns';
+import { format, addMonths, isAfter, differenceInDays } from 'date-fns';
 import { v4 as uuidv4 } from 'uuid';
 import * as XLSX from 'xlsx';
 
@@ -18,8 +18,12 @@ interface CustomersProps {
 }
 
 // Utility to parse YYYY-MM-DD safely as local midnight
-const parseLocalDate = (dateStr: string) => {
-  const [y, m, d] = dateStr.split('-').map(Number);
+const parseLocalDate = (dateStr: string | undefined | null) => {
+  if (!dateStr || typeof dateStr !== 'string') return new Date(NaN);
+  const parts = dateStr.split('T')[0].split('-');
+  if (parts.length !== 3) return new Date(dateStr);
+  const [y, m, d] = parts.map(Number);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return new Date(NaN);
   return new Date(y, m - 1, d);
 };
 
@@ -59,6 +63,7 @@ export function Customers({
   });
 
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
@@ -365,7 +370,13 @@ export function Customers({
       const matchesStatus = statusFilter === 'all' || status.toLowerCase() === statusFilter;
 
       return matchesSearch && matchesServer && matchesStatus;
-    }).sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime());
+    }).sort((a, b) => {
+      const dateA = parseLocalDate(a.dueDate).getTime();
+      const dateB = parseLocalDate(b.dueDate).getTime();
+      if (isNaN(dateA)) return 1;
+      if (isNaN(dateB)) return -1;
+      return dateA - dateB;
+    });
   }, [customers, searchQuery, serverFilter, statusFilter, today]);
 
   return (
@@ -451,9 +462,10 @@ export function Customers({
           filteredCustomers.map(customer => {
             const server = servers.find(s => s.id === customer.serverId);
             const plan = plans.find(p => p.id === customer.planId);
-            const dueDate = parseISO(customer.dueDate);
-            const daysDiff = differenceInDays(dueDate, today);
-            const isActive = isAfter(dueDate, today) || daysDiff === 0;
+            const dRaw = parseLocalDate(customer.dueDate);
+            const customerDueDate = isNaN(dRaw.getTime()) ? new Date() : dRaw;
+            const daysDiff = differenceInDays(customerDueDate, today);
+            const isActive = isAfter(customerDueDate, today) || daysDiff === 0;
 
             return (
               <div key={customer.id} className="bg-[#1a1a1a] rounded-2xl border border-white/5 p-4 shadow-lg">

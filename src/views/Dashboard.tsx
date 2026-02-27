@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Customer, Server, Plan, Renewal, ManualAddition } from '../types';
-import { differenceInDays, isAfter, parseISO, format, addMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import { differenceInDays, isAfter, format, addMonths, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import { TrendingUp, TrendingDown, DollarSign, AlertCircle, MessageCircle, RefreshCw } from 'lucide-react';
 
 interface DashboardProps {
@@ -14,8 +14,19 @@ interface DashboardProps {
   manualAdditions: ManualAddition[];
 }
 
+// Utility to parse YYYY-MM-DD safely as local midnight
+const parseLocalDate = (dateStr: string | undefined | null) => {
+  if (!dateStr || typeof dateStr !== 'string') return new Date(NaN);
+  const parts = dateStr.split('T')[0].split('-');
+  if (parts.length !== 3) return new Date(dateStr);
+  const [y, m, d] = parts.map(Number);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return new Date(NaN);
+  return new Date(y, m - 1, d);
+};
+
 export function Dashboard({ customers, servers, plans, whatsappMessage, updateCustomer, renewals, addRenewal, manualAdditions }: DashboardProps) {
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   // Renew State
   const [renewData, setRenewData] = useState<{
@@ -43,25 +54,25 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
       // Calculate accumulated total for this server (all-time)
       const serverRenewals = renewals.filter(r => r.serverId === s.id);
       const accumulatedTotal = serverRenewals.reduce((acc, r) => acc + r.amount, 0);
-      
+
       // Calculate total gross for this server
       const serverTotalGross = serverRenewals.reduce((acc, r) => acc + r.amount, 0);
 
       // Calculate total cost for this server
       const serverTotalCost = serverRenewals.reduce((acc, r) => acc + (r.cost || 0), 0);
 
-      stats[s.id] = { 
-        name: s.name, 
-        active: 0, 
-        monthlyGross: serverTotalGross, 
-        monthlyCost: serverTotalCost, 
-        accumulatedTotal 
+      stats[s.id] = {
+        name: s.name,
+        active: 0,
+        monthlyGross: serverTotalGross,
+        monthlyCost: serverTotalCost,
+        accumulatedTotal
       };
     });
 
     customers.forEach(c => {
       try {
-        const dueDate = parseISO(c.dueDate);
+        const dueDate = parseLocalDate(c.dueDate);
         if (isNaN(dueDate.getTime())) return;
 
         const isActive = isAfter(dueDate, today) || differenceInDays(dueDate, today) === 0;
@@ -83,7 +94,13 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
     });
 
     // Sort expiring by closest
-    expiring.sort((a, b) => parseISO(a.dueDate).getTime() - parseISO(b.dueDate).getTime());
+    expiring.sort((a, b) => {
+      const dateA = parseLocalDate(a.dueDate).getTime();
+      const dateB = parseLocalDate(b.dueDate).getTime();
+      if (isNaN(dateA)) return 1;
+      if (isNaN(dateB)) return -1;
+      return dateA - dateB;
+    });
 
     return {
       grossValue: totalGross,
@@ -122,18 +139,18 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
       const customer = customers.find(c => c.id === renewData.customerId);
       const plan = plans.find(p => p.id === renewData.planId);
       if (customer && plan) {
-        const currentDueDate = parseISO(customer.dueDate);
+        const currentDueDate = parseLocalDate(customer.dueDate);
         const isActive = isAfter(currentDueDate, today) || differenceInDays(currentDueDate, today) === 0;
-        
+
         // If active, add to current due date. If expired, add to today.
         const baseDate = isActive ? currentDueDate : today;
         const newDueDate = format(addMonths(baseDate, plan.months), 'yyyy-MM-dd');
-        
-        updateCustomer(customer.id, { 
+
+        updateCustomer(customer.id, {
           serverId: renewData.serverId,
           planId: renewData.planId,
           amountPaid: parseFloat(renewData.amountPaid.replace(',', '.')),
-          dueDate: newDueDate 
+          dueDate: newDueDate
         });
 
         const server = servers.find(s => s.id === renewData.serverId);
@@ -154,7 +171,7 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
 
   const pendingNotifications = useMemo(() => {
     return expiringCustomers.filter(c => {
-      const days = differenceInDays(parseISO(c.dueDate), today);
+      const days = differenceInDays(parseLocalDate(c.dueDate), today);
       return days === 7 && c.lastNotifiedDate !== format(today, 'yyyy-MM-dd');
     });
   }, [expiringCustomers, today]);
@@ -173,23 +190,23 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
               <div className="text-[#0f0f0f]/70 text-xs font-medium">{pendingNotifications.length} avisos pendentes para hoje</div>
             </div>
           </div>
-          <button 
+          <button
             onClick={() => {
               const first = pendingNotifications[0];
-              const days = differenceInDays(parseISO(first.dueDate), today);
+              const days = differenceInDays(parseLocalDate(first.dueDate), today);
               const message = whatsappMessage
                 .replace('{nome}', first.name)
                 .replace('{valor}', formatCurrency(first.amountPaid))
                 .replace('{dias}', days === 0 ? 'hoje' : `${days} dias`)
                 .replace('{vencimento}', (() => {
                   try {
-                    const d = parseISO(first.dueDate);
+                    const d = parseLocalDate(first.dueDate);
                     return isNaN(d.getTime()) ? 'Data Inválida' : format(d, 'dd/MM/yyyy');
                   } catch {
                     return 'Data Inválida';
                   }
                 })());
-              
+
               updateCustomer(first.id, { lastNotifiedDate: format(today, 'yyyy-MM-dd') });
               window.open(`https://wa.me/${first.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
             }}
@@ -219,7 +236,7 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
           </div>
           <div className="text-xl font-bold text-white">{formatCurrency(grossValue)}</div>
         </div>
-        
+
         <div className="bg-[#1a1a1a] p-4 rounded-2xl border border-white/5 shadow-lg">
           <div className="flex items-center space-x-2 text-gray-400 mb-2">
             <TrendingDown size={16} />
@@ -268,30 +285,31 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
           <div className="divide-y divide-white/5">
             {expiringCustomers.map(c => {
               const server = servers.find(s => s.id === c.serverId);
-              const days = differenceInDays(parseISO(c.dueDate), today);
+              const dRaw = parseLocalDate(c.dueDate);
+              const customerDueDate = isNaN(dRaw.getTime()) ? today : dRaw;
+              const days = differenceInDays(customerDueDate, today);
               const isSevenDayMark = days === 7;
               const alreadyNotified = c.lastNotifiedDate === format(today, 'yyyy-MM-dd');
-              
+
               const message = whatsappMessage
                 .replace('{nome}', c.name)
                 .replace('{valor}', formatCurrency(c.amountPaid))
                 .replace('{dias}', days === 0 ? 'hoje' : `${days} dias`)
                 .replace('{vencimento}', (() => {
                   try {
-                    const d = parseISO(c.dueDate);
-                    return isNaN(d.getTime()) ? 'Data Inválida' : format(d, 'dd/MM/yyyy');
+                    return isNaN(customerDueDate.getTime()) ? 'Data Inválida' : format(customerDueDate, 'dd/MM/yyyy');
                   } catch {
                     return 'Data Inválida';
                   }
                 })());
-              
+
               const encodedMessage = encodeURIComponent(message);
-              
+
               const handleWhatsAppClick = () => {
                 updateCustomer(c.id, { lastNotifiedDate: format(today, 'yyyy-MM-dd') });
                 window.open(`https://wa.me/${c.phone.replace(/\D/g, '')}?text=${encodedMessage}`, '_blank');
               };
-              
+
               return (
                 <div key={c.id} className="p-4 flex items-center justify-between">
                   <div>
@@ -312,14 +330,14 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
                     </div>
                   </div>
                   <div className="flex space-x-2">
-                    <button 
-                      onClick={() => openRenewModal(c)} 
+                    <button
+                      onClick={() => openRenewModal(c)}
                       className="p-2 bg-green-500/10 text-green-400 rounded-full hover:bg-green-500/20 transition-colors"
                       title="Renovar"
                     >
                       <RefreshCw size={20} />
                     </button>
-                    <button 
+                    <button
                       onClick={handleWhatsAppClick}
                       className={`p-2 rounded-full transition-colors ${alreadyNotified ? 'bg-gray-500/20 text-gray-500' : 'bg-green-600/20 text-green-500 hover:bg-green-600/30'}`}
                       title="WhatsApp"
@@ -341,7 +359,7 @@ export function Dashboard({ customers, servers, plans, whatsappMessage, updateCu
             <h3 className="text-xl font-bold text-white mb-6 uppercase tracking-widest">
               Renovar Plano
             </h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Servidor</label>

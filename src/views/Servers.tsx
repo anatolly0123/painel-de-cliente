@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Server, Customer, Plan } from '../types';
 import { Plus, Edit2, Trash2, Server as ServerIcon } from 'lucide-react';
-import { parseISO, isAfter, differenceInDays } from 'date-fns';
+import { isAfter, differenceInDays } from 'date-fns';
 
 interface ServersProps {
   servers: Server[];
@@ -11,6 +11,16 @@ interface ServersProps {
   updateServer: (id: string, s: Partial<Server>) => void;
   deleteServer: (id: string) => void;
 }
+
+// Utility to parse YYYY-MM-DD safely as local midnight
+const parseLocalDate = (dateStr: string | undefined | null) => {
+  if (!dateStr || typeof dateStr !== 'string') return new Date(NaN);
+  const parts = dateStr.split('T')[0].split('-');
+  if (parts.length !== 3) return new Date(dateStr);
+  const [y, m, d] = parts.map(Number);
+  if (isNaN(y) || isNaN(m) || isNaN(d)) return new Date(NaN);
+  return new Date(y, m - 1, d);
+};
 
 export function Servers({ servers, customers, plans, addServer, updateServer, deleteServer }: ServersProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -50,12 +60,13 @@ export function Servers({ servers, customers, plans, addServer, updateServer, de
   };
 
   const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   return (
     <div className="pb-24 space-y-4">
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-white uppercase tracking-widest">Servidores</h2>
-        <button 
+        <button
           onClick={() => openModal()}
           className="bg-[#c8a646] text-[#0f0f0f] p-2 rounded-full hover:bg-[#e8c666] transition-colors shadow-lg shadow-[#c8a646]/20"
         >
@@ -73,12 +84,12 @@ export function Servers({ servers, customers, plans, addServer, updateServer, de
           {servers.map(server => {
             const activeCustomers = customers.filter(c => {
               if (c.serverId !== server.id) return false;
-              const dueDate = parseISO(c.dueDate);
+              const dueDate = parseLocalDate(c.dueDate);
               return isAfter(dueDate, today) || differenceInDays(dueDate, today) === 0;
             });
             const totalActive = activeCustomers.length;
             const totalGenerated = activeCustomers.reduce((acc, c) => acc + c.amountPaid, 0);
-            
+
             // Calculate total cost based on plans
             const totalPaid = activeCustomers.reduce((sum, c) => {
               const plan = plans.find(p => p.id === c.planId);
