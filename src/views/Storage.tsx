@@ -1,9 +1,7 @@
 import { useState, useEffect, ChangeEvent, useMemo } from 'react';
 import { Database, Download, Upload, Trash2, HardDrive, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSign } from 'lucide-react';
 import { Customer, Server, Plan, Renewal, ManualAddition } from '../types';
-import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth, subMonths, addMonths } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
-import { supabase } from '../lib/supabase';
+import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth } from 'date-fns';
 
 interface StorageProps {
   customers: Customer[];
@@ -90,89 +88,6 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
     if (confirm('TEM CERTEZA? Isso apagará TODOS os seus dados (Clientes, Servidores e Planos). Esta ação não pode ser desfeita.')) {
       localStorage.clear();
       window.location.reload();
-    }
-  };
-
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  const syncLocalToCloud = async () => {
-    if (!confirm('Deseja enviar seus dados locais para a nuvem? Isso pode sobrescrever dados existentes.')) return;
-
-    setIsSyncing(true);
-    try {
-      // 1. Servers
-      const localServers = JSON.parse(localStorage.getItem('arf_servers') || '[]');
-      for (const s of localServers) {
-        await supabase.from('servers').upsert([{ ...s, user_id: (await supabase.auth.getUser()).data.user?.id }]);
-      }
-
-      // 2. Plans
-      const localPlans = JSON.parse(localStorage.getItem('arf_plans') || '[]');
-      for (const p of localPlans) {
-        await supabase.from('plans').upsert([{ ...p, user_id: (await supabase.auth.getUser()).data.user?.id }]);
-      }
-
-      // 3. Customers
-      const localCustomers = JSON.parse(localStorage.getItem('arf_customers') || '[]');
-      for (const c of localCustomers) {
-        const dbCustomer = {
-          ...c,
-          user_id: (await supabase.auth.getUser()).data.user?.id,
-          server_id: c.serverId,
-          plan_id: c.planId,
-          amount_paid: c.amountPaid,
-          due_date: c.dueDate,
-          last_notified_date: c.lastNotifiedDate
-        };
-        // Remove frontend-only field names that don't match DB
-        delete (dbCustomer as any).serverId;
-        delete (dbCustomer as any).planId;
-        delete (dbCustomer as any).amountPaid;
-        delete (dbCustomer as any).dueDate;
-        delete (dbCustomer as any).lastNotifiedDate;
-
-        await supabase.from('customers').upsert([dbCustomer]);
-      }
-
-      // 4. Renewals
-      const localRenewals = JSON.parse(localStorage.getItem('arf_renewals') || '[]');
-      for (const r of localRenewals) {
-        const dbRenewal = {
-          ...r,
-          user_id: (await supabase.auth.getUser()).data.user?.id,
-          customer_id: r.customerId,
-          server_id: r.serverId,
-          plan_id: r.planId
-        };
-        delete (dbRenewal as any).customerId;
-        delete (dbRenewal as any).serverId;
-        delete (dbRenewal as any).planId;
-
-        await supabase.from('renewals').upsert([dbRenewal]);
-      }
-
-      // 5. Manual Additions
-      const localAdditions = JSON.parse(localStorage.getItem('arf_manual_additions') || '[]');
-      for (const a of localAdditions) {
-        await supabase.from('manual_additions').upsert([{ ...a, user_id: (await supabase.auth.getUser()).data.user?.id }]);
-      }
-
-      // 6. Settings
-      const localMsg = localStorage.getItem('arf_message_v2');
-      if (localMsg) {
-        await supabase.from('settings').upsert({
-          user_id: (await supabase.auth.getUser()).data.user?.id,
-          whatsapp_message: localMsg
-        });
-      }
-
-      alert('Dados sincronizados com a nuvem com sucesso!');
-      window.location.reload();
-    } catch (error) {
-      console.error('Migration error:', error);
-      alert('Erro ao sincronizar dados. Tente novamente.');
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -295,20 +210,6 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
         </div>
 
         <div className="space-y-3">
-          <button
-            onClick={syncLocalToCloud}
-            disabled={isSyncing}
-            className={`w-full flex items-center justify-between p-4 bg-[#c8a646]/10 border border-[#c8a646]/20 rounded-2xl hover:bg-[#c8a646]/20 transition-colors group ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            <div className="flex items-center space-x-3">
-              <Upload size={20} className="text-[#c8a646]" />
-              <div className="text-left">
-                <div className="text-sm font-bold text-white">{isSyncing ? 'Sincronizando...' : 'Sincronizar com Nuvem'}</div>
-                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Enviar dados locais para o Supabase</div>
-              </div>
-            </div>
-          </button>
-
           <button
             onClick={handleExportAll}
             className="w-full flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-colors group"

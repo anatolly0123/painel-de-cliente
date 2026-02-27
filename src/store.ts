@@ -1,229 +1,140 @@
-import { useState, useEffect, useCallback } from 'react';
-import { Server, Plan, Customer, Renewal, ManualAddition } from './types';
-import { supabase } from './lib/supabase';
+import { useState, useEffect } from 'react';
+import { Customer, Server, Plan, Renewal, ManualAddition } from './types';
+import { v4 as uuidv4 } from 'uuid';
 
-const DEFAULT_PLANS: Plan[] = [
-  { id: '0', name: 'Gratuito', defaultPrice: 0, months: 1 },
-  { id: '1', name: 'Mensal', defaultPrice: 35, months: 1 },
-  { id: '2', name: 'Trimestral', defaultPrice: 90, months: 3 },
-  { id: '3', name: 'Semestral', defaultPrice: 160, months: 6 },
-  { id: '4', name: 'Anual', defaultPrice: 300, months: 12 },
-];
+export const useStore = () => {
+  const [customers, setCustomers] = useState<Customer[]>(() => {
+    const saved = localStorage.getItem('arf_customers');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-export function useStore(userId: string | undefined) {
-  const [servers, setServers] = useState<Server[]>([]);
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
-  const [renewals, setRenewals] = useState<Renewal[]>([]);
-  const [manualAdditions, setManualAdditions] = useState<ManualAddition[]>([]);
-  const [whatsappMessage, setWhatsappMessage] = useState<string>('');
-  const [loading, setLoading] = useState(true);
+  const [servers, setServers] = useState<Server[]>(() => {
+    const saved = localStorage.getItem('arf_servers');
+    return saved ? JSON.parse(saved) : [];
+  });
 
-  const fetchData = useCallback(async () => {
-    if (!userId) return;
-    setLoading(true);
-    try {
-      const [
-        { data: srv },
-        { data: pln },
-        { data: cust },
-        { data: ren },
-        { data: manual },
-        { data: settings }
-      ] = await Promise.all([
-        supabase.from('servers').select('*').order('created_at'),
-        supabase.from('plans').select('*').order('created_at'),
-        supabase.from('customers').select('*').order('created_at'),
-        supabase.from('renewals').select('*').order('created_at'),
-        supabase.from('manual_additions').select('*').order('created_at'),
-        supabase.from('settings').select('whatsapp_message').eq('user_id', userId).single()
-      ]);
-
-      setServers(srv || []);
-
-      const serverIds = (srv || []).map(s => s.id);
-
-      // Ensure 'Gratuito' and other default plans exist or are merged
-      let cloudPlans = pln || [];
-      const mergedPlans = [...DEFAULT_PLANS];
-
-      cloudPlans.forEach(cp => {
-        const index = mergedPlans.findIndex(p => p.name === cp.name);
-        if (index !== -1) {
-          mergedPlans[index] = { ...mergedPlans[index], ...cp };
-        } else {
-          mergedPlans.push(cp);
-        }
-      });
-      setPlans(mergedPlans);
-
-      setCustomers(cust || []);
-      setRenewals(ren || []);
-      setManualAdditions(manual || []);
-
-      const defaultMsg = 'Olá *{nome}*! 👋\n\nPassando para lembrar que seu acesso vence em *{dias}* (dia *{vencimento}*).\n\nO valor para renovação é de *{valor}*.\n\nPodemos confirmar sua renovação para garantir que você não fique sem sinal? 😊';
-      setWhatsappMessage(settings?.whatsapp_message || defaultMsg);
-    } catch (error) {
-      console.error('Error fetching data:', error);
-    } finally {
-      setLoading(false);
+  const [plans, setPlans] = useState<Plan[]>(() => {
+    const saved = localStorage.getItem('arf_plans');
+    const defaultPlans = [
+      { id: '1', name: 'Mensal', months: 1, defaultPrice: 30 },
+      { id: '2', name: 'Trimestral', months: 3, defaultPrice: 80 },
+      { id: 'gratuito', name: 'Gratuito', months: 1, defaultPrice: 0 }
+    ];
+    if (!saved) return defaultPlans;
+    const loaded = JSON.parse(saved);
+    // Ensure 'Gratuito' is always there
+    if (!loaded.find((p: Plan) => p.id === 'gratuito')) {
+      return [...loaded, { id: 'gratuito', name: 'Gratuito', months: 1, defaultPrice: 0 }];
     }
-  }, [userId]);
+    return loaded;
+  });
+
+  const [renewals, setRenewals] = useState<Renewal[]>(() => {
+    const saved = localStorage.getItem('arf_renewals');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [manualAdditions, setManualAdditions] = useState<ManualAddition[]>(() => {
+    const saved = localStorage.getItem('arf_manual_additions');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [whatsappMessage, setWhatsappMessage] = useState<string>(() => {
+    return localStorage.getItem('arf_message_v2') ||
+      'Olá {nome}! Seu acesso está vencendo {dias} ({vencimento}). O valor para renovação é {valor}. Como deseja prosseguir?';
+  });
+
+  // Persistence
+  useEffect(() => {
+    localStorage.setItem('arf_customers', JSON.stringify(customers));
+  }, [customers]);
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    localStorage.setItem('arf_servers', JSON.stringify(servers));
+  }, [servers]);
 
-  // Server Actions
-  const addServer = async (server: Omit<Server, 'id'>) => {
-    const { data, error } = await supabase.from('servers').insert([{ ...server, user_id: userId }]).select();
-    if (data) setServers(prev => [...prev, data[0]]);
-    return { data, error };
+  useEffect(() => {
+    localStorage.setItem('arf_plans', JSON.stringify(plans));
+  }, [plans]);
+
+  useEffect(() => {
+    localStorage.setItem('arf_renewals', JSON.stringify(renewals));
+  }, [renewals]);
+
+  useEffect(() => {
+    localStorage.setItem('arf_manual_additions', JSON.stringify(manualAdditions));
+  }, [manualAdditions]);
+
+  useEffect(() => {
+    localStorage.setItem('arf_message_v2', whatsappMessage);
+  }, [whatsappMessage]);
+
+  // Actions
+  const addCustomer = (c: Omit<Customer, 'id'>) => {
+    setCustomers(prev => [...prev, { ...c, id: uuidv4() }]);
   };
 
-  const updateServer = async (id: string, updates: Partial<Server>) => {
-    const { error } = await supabase.from('servers').update(updates).eq('id', id);
-    if (!error) setServers(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  const updateCustomer = (id: string, c: Partial<Customer>) => {
+    setCustomers(prev => prev.map(item => item.id === id ? { ...item, ...c } : item));
   };
 
-  const deleteServer = async (id: string) => {
-    const { error } = await supabase.from('servers').delete().eq('id', id);
-    if (!error) setServers(prev => prev.filter(s => s.id !== id));
+  const deleteCustomer = (id: string) => {
+    setCustomers(prev => prev.filter(item => item.id !== id));
   };
 
-  // Plan Actions
-  const updatePlan = async (id: string, defaultPrice: number) => {
-    const { error } = await supabase.from('plans').update({ default_price: defaultPrice }).eq('id', id);
-    if (!error) setPlans(prev => prev.map(p => p.id === id ? { ...p, defaultPrice } : p));
+  const bulkUpdateCustomers = (updater: (prev: Customer[]) => Customer[]) => {
+    setCustomers(updater);
   };
 
-  // Customer Actions
-  const addCustomer = async (customer: Customer) => {
-    // Mapping frontend fields to DB snake_case
-    const dbCustomer = {
-      id: customer.id,
-      user_id: userId,
-      name: customer.name,
-      phone: customer.phone,
-      server_id: customer.serverId,
-      plan_id: customer.planId,
-      amount_paid: customer.amountPaid,
-      due_date: customer.dueDate,
-      last_notified_date: customer.lastNotifiedDate
-    };
-    const { data, error } = await supabase.from('customers').insert([dbCustomer]).select();
-    if (data) setCustomers(prev => [...prev, customer]);
-    return { data, error };
+  const addServer = (s: Omit<Server, 'id'>) => {
+    setServers(prev => [...prev, { ...s, id: uuidv4() }]);
   };
 
-  const updateCustomer = async (id: string, data: Partial<Customer>) => {
-    const dbUpdates: any = {};
-    if (data.name !== undefined) dbUpdates.name = data.name;
-    if (data.phone !== undefined) dbUpdates.phone = data.phone;
-    if (data.serverId !== undefined) dbUpdates.server_id = data.serverId;
-    if (data.planId !== undefined) dbUpdates.plan_id = data.planId;
-    if (data.amountPaid !== undefined) dbUpdates.amount_paid = data.amountPaid;
-    if (data.dueDate !== undefined) dbUpdates.due_date = data.dueDate;
-    if (data.lastNotifiedDate !== undefined) dbUpdates.last_notified_date = data.lastNotifiedDate;
-
-    const { error } = await supabase.from('customers').update(dbUpdates).eq('id', id);
-    if (!error) setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...data } : c));
+  const updateServer = (id: string, s: Partial<Server>) => {
+    setServers(prev => prev.map(item => item.id === id ? { ...item, ...s } : item));
   };
 
-  const deleteCustomer = async (id: string) => {
-    const { error } = await supabase.from('customers').delete().eq('id', id);
-    if (!error) setCustomers(prev => prev.filter(c => c.id !== id));
+  const deleteServer = (id: string) => {
+    setServers(prev => prev.filter(item => item.id !== id));
   };
 
-  const bulkUpdateCustomers = async (updater: (prev: Customer[]) => Customer[]) => {
-    const next = updater(customers);
-
-    // Find customers that don't exist in the current list (new ones)
-    const currentIds = new Set(customers.map(c => c.id));
-    const newCustomers = next.filter(c => !currentIds.has(c.id));
-
-    if (newCustomers.length > 0) {
-      const dbCustomers = newCustomers.map(c => ({
-        id: c.id,
-        user_id: userId,
-        name: c.name,
-        phone: c.phone,
-        server_id: c.serverId,
-        plan_id: c.planId,
-        amount_paid: c.amountPaid,
-        due_date: c.dueDate,
-        last_notified_date: c.lastNotifiedDate
-      }));
-
-      await supabase.from('customers').upsert(dbCustomers);
-    }
-
-    setCustomers(next);
+  const addPlan = (p: Omit<Plan, 'id'>) => {
+    setPlans(prev => [...prev, { ...p, id: uuidv4() }]);
   };
 
-  // Renewal Actions
-  const addRenewal = async (renewal: Omit<Renewal, 'id'>) => {
-    const dbRenewal = {
-      user_id: userId,
-      customer_id: renewal.customerId,
-      server_id: renewal.serverId,
-      plan_id: renewal.planId,
-      amount: renewal.amount,
-      cost: renewal.cost,
-      date: renewal.date
-    };
-    const { data, error } = await supabase.from('renewals').insert([dbRenewal]).select();
-    if (data) {
-      const newRenewal = { ...renewal, id: data[0].id } as Renewal;
-      setRenewals(prev => [...prev, newRenewal]);
-    }
+  const updatePlan = (id: string, p: Partial<Plan>) => {
+    setPlans(prev => prev.map(item => item.id === id ? { ...item, ...p } : item));
   };
 
-  // Manual Addition Actions
-  const addManualAddition = async (addition: Omit<ManualAddition, 'id'>) => {
-    const { data, error } = await supabase.from('manual_additions').insert([{ ...addition, user_id: userId }]).select();
-    if (data) {
-      const newAddition = { ...addition, id: data[0].id } as ManualAddition;
-      setManualAdditions(prev => [...prev, newAddition]);
-    }
+  const deletePlan = (id: string) => {
+    if (id === 'gratuito') return;
+    setPlans(prev => prev.filter(item => item.id !== id));
   };
 
-  // Settings Actions
-  const updateWhatsappMessage = async (message: string) => {
-    const { error } = await supabase.from('settings').upsert({
-      user_id: userId,
-      whatsapp_message: message,
-      updated_at: new Date().toISOString()
-    });
-    if (!error) setWhatsappMessage(message);
+  const addRenewal = (r: Omit<Renewal, 'id'>) => {
+    setRenewals(prev => [...prev, { ...r, id: uuidv4() }]);
   };
 
-  // Bulk migration helpers (for Storage.tsx)
-  const bulkUpdateServers = useCallback(async (newServers: Server[]) => {
-    setServers(newServers);
-  }, []);
+  const addManualAddition = (a: Omit<ManualAddition, 'id'>) => {
+    setManualAdditions(prev => [...prev, { ...a, id: uuidv4() }]);
+  };
 
-  const bulkUpdatePlans = useCallback(async (newPlans: Plan[]) => {
-    setPlans(newPlans);
-  }, []);
+  const updateManualAddition = (id: string, a: Partial<ManualAddition>) => {
+    setManualAdditions(prev => prev.map(item => item.id === id ? { ...item, ...a } : item));
+  };
 
-  const bulkUpdateRenewals = useCallback(async (newRenewals: Renewal[]) => {
-    setRenewals(newRenewals);
-  }, []);
-
-  const bulkUpdateManualAdditions = useCallback(async (newManualAdditions: ManualAddition[]) => {
-    setManualAdditions(newManualAdditions);
-  }, []);
+  const deleteManualAddition = (id: string) => {
+    setManualAdditions(prev => prev.filter(item => item.id !== id));
+  };
 
   return {
-    servers, addServer, updateServer, deleteServer, bulkUpdateServers,
-    plans, updatePlan, bulkUpdatePlans,
     customers, addCustomer, updateCustomer, deleteCustomer, bulkUpdateCustomers,
-    renewals, addRenewal, bulkUpdateRenewals,
-    manualAdditions, addManualAddition, bulkUpdateManualAdditions,
-    whatsappMessage, setWhatsappMessage: updateWhatsappMessage,
-    loading, refreshData: fetchData
+    servers, addServer, updateServer, deleteServer, setServers,
+    plans, addPlan, updatePlan, deletePlan, setPlans,
+    renewals, addRenewal, setRenewals,
+    manualAdditions, addManualAddition, updateManualAddition, deleteManualAddition, setManualAdditions,
+    whatsappMessage, setWhatsappMessage,
+    loading: false,
+    authLoading: false
   };
-}
-
-
+};
