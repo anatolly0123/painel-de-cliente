@@ -4,4 +4,4 @@ export function Renewals() {
             <h1>Renovações</h1>
         </div>
     );
-}
+} 
