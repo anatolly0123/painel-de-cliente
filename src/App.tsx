@@ -1,4 +1,5 @@
-// Versão: 1.5.2 - Limpeza Definitiva de Imports
+// VERSÃO: 2.0 - LIMPEZA NUCLEAR DE IMPORTS
+// ESTA VERSÃO NÃO CONTÉM REWENEWALS
 import { useState } from 'react';
 import { Customer, Server, Plan } from './types';
 import { Dashboard } from './views/Dashboard';
