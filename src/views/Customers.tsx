@@ -17,15 +17,15 @@ interface CustomersProps {
   addRenewal: (r: Omit<Renewal, 'id'>) => void;
 }
 
-export function Customers({ 
-  customers, servers, plans, whatsappMessage, 
-  addCustomer, updateCustomer, deleteCustomer, 
+export function Customers({
+  customers, servers, plans, whatsappMessage,
+  addCustomer, updateCustomer, deleteCustomer,
   bulkUpdateCustomers, addRenewal
 }: CustomersProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Delete Confirmation State
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
 
@@ -36,7 +36,7 @@ export function Customers({
     planId: string;
     amountPaid: string;
   } | null>(null);
-  
+
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [serverFilter, setServerFilter] = useState('all');
@@ -100,7 +100,7 @@ export function Customers({
     } else {
       const newId = uuidv4();
       addCustomer({ ...data, id: newId });
-      
+
       const server = servers.find(s => s.id === data.serverId);
       const plan = plans.find(p => p.id === data.planId);
       const cost = (server?.costPerActive || 0) * (plan?.months || 1);
@@ -138,7 +138,7 @@ export function Customers({
         const workbook = XLSX.read(data, { type: 'array' });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
-        
+
         // Use raw objects to allow flexible parsing of both strings and numbers
         const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' }) as any[];
 
@@ -149,11 +149,11 @@ export function Customers({
           // Flexible header matching in case user slightly changes case
           const getField = (possibleNames: string[]) => {
             for (const name of possibleNames) {
-                for (const key in row) {
-                    if (key.toLowerCase().includes(name.toLowerCase())) {
-                        return row[key] ? String(row[key]).trim() : '';
-                    }
+              for (const key in row) {
+                if (key.toLowerCase().includes(name.toLowerCase())) {
+                  return row[key] ? String(row[key]).trim() : '';
                 }
+              }
             }
             return '';
           };
@@ -180,71 +180,79 @@ export function Customers({
           let planMonths = plans[0]?.months || 1;
           const matchedPlan = plans.find(p => p.name.toLowerCase() === planoNome.toLowerCase());
           if (matchedPlan) {
-              planId = matchedPlan.id;
-              planMonths = matchedPlan.months;
+            planId = matchedPlan.id;
+            planMonths = matchedPlan.months;
           }
 
           // Parse Value
           let amountPaid = matchedPlan ? matchedPlan.defaultPrice : 0;
           if (valorRaw) {
-             const parsedVal = parseFloat(valorRaw.replace(',', '.').replace(/[^\d.-]/g, ''));
-             if (!isNaN(parsedVal)) amountPaid = parsedVal;
+            const parsedVal = parseFloat(valorRaw.replace(',', '.').replace(/[^\d.-]/g, ''));
+            if (!isNaN(parsedVal)) amountPaid = parsedVal;
           }
 
           // Parse Date
           let dueDate = format(addMonths(new Date(), planMonths), 'yyyy-MM-dd');
           if (vencimentoRaw) {
-              // Handle DD/MM/YYYY format string
-              const parts = vencimentoRaw.split('/');
-              if (parts.length === 3) {
-                  const day = parseInt(parts[0], 10);
-                  const month = parseInt(parts[1], 10) - 1; // 0-indexed
-                  const year = parseInt(parts[2], 10);
-                  const parsedDate = new Date(year, month, day);
-                  if (!isNaN(parsedDate.getTime())) {
-                      dueDate = format(parsedDate, 'yyyy-MM-dd');
-                  }
+            const vencStr = String(vencimentoRaw).trim();
+            // Handle DD/MM/YYYY format string
+            const parts = vencStr.split('/');
+            if (parts.length === 3) {
+              const day = parseInt(parts[0], 10);
+              const month = parseInt(parts[1], 10) - 1; // 0-indexed
+              const year = parseInt(parts[2], 10);
+              const parsedDate = new Date(year, month, day);
+              if (!isNaN(parsedDate.getTime())) {
+                dueDate = format(parsedDate, 'yyyy-MM-dd');
               }
+            } else if (!isNaN(Number(vencStr))) {
+              // Handle Excel serial date (number)
+              const parsedDate = XLSX.SSF.parse_date_code(Number(vencStr));
+              const dateObj = new Date(parsedDate.y, parsedDate.m - 1, parsedDate.d);
+              if (!isNaN(dateObj.getTime())) {
+                dueDate = format(dateObj, 'yyyy-MM-dd');
+              }
+            }
           }
 
           const customerId = uuidv4();
           newCustomers.push({
-              id: customerId,
-              name: nome,
-              phone,
-              serverId,
-              planId,
-              amountPaid,
-              dueDate
+            id: customerId,
+            name: nome,
+            phone,
+            serverId,
+            planId,
+            amountPaid,
+            dueDate
           });
 
           // Generate corresponding renewal history
           const cost = (matchedServer?.costPerActive || servers[0]?.costPerActive || 0) * planMonths;
           newRenewals.push({
-              customerId,
-              serverId,
-              planId,
-              amount: amountPaid,
-              cost: cost,
-              date: new Date().toISOString()
+            customerId,
+            serverId,
+            planId,
+            amount: amountPaid,
+            cost: cost,
+            date: new Date().toISOString()
           });
         });
 
         if (newCustomers.length > 0) {
-            bulkUpdateCustomers(prev => [...prev, ...newCustomers]);
-            newRenewals.forEach(addRenewal);
-            alert(`${newCustomers.length} clientes importados com sucesso!`);
+          bulkUpdateCustomers(prev => [...prev, ...newCustomers]);
+          newRenewals.forEach(addRenewal);
+          alert(`${newCustomers.length} clientes importados com sucesso!`);
         } else {
-             alert('Nenhum cliente válido encontrado na planilha.');
+          alert('Nenhum cliente válido encontrado na planilha.');
         }
       } catch (error) {
         console.error('Erro ao processar arquivo:', error);
         alert('Erro ao ler o arquivo Excel. Verifique o formato e tente novamente.');
       }
-      
+
       // Reset input
       if (fileInputRef.current) {
-          fileInputRef.current.value = '';
+        fileInputRef.current.value = '';
       }
     };
 
@@ -305,16 +313,16 @@ export function Customers({
       if (customer && plan) {
         const currentDueDate = parseISO(customer.dueDate);
         const isActive = isAfter(currentDueDate, today) || differenceInDays(currentDueDate, today) === 0;
-        
+
         // If active, add to current due date. If expired, add to today.
         const baseDate = isActive ? currentDueDate : today;
         const newDueDate = format(addMonths(baseDate, plan.months), 'yyyy-MM-dd');
-        
-        updateCustomer(customer.id, { 
+
+        updateCustomer(customer.id, {
           serverId: renewData.serverId,
           planId: renewData.planId,
           amountPaid: parseFloat(renewData.amountPaid.replace(',', '.')),
-          dueDate: newDueDate 
+          dueDate: newDueDate
         });
 
         const server = servers.find(s => s.id === renewData.serverId);
@@ -336,10 +344,10 @@ export function Customers({
   // Filter and sort customers
   const filteredCustomers = useMemo(() => {
     return customers.filter(c => {
-      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           c.phone.includes(searchQuery);
+      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.phone.includes(searchQuery);
       const matchesServer = serverFilter === 'all' || c.serverId === serverFilter;
-      
+
       const dueDate = parseISO(c.dueDate);
       const isActive = isAfter(dueDate, today) || differenceInDays(dueDate, today) === 0;
       const status = isActive ? 'Ativo' : 'Vencido';
@@ -354,28 +362,28 @@ export function Customers({
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-xl font-bold text-white uppercase tracking-widest">Clientes</h2>
         <div className="flex space-x-2 relative">
-          <input 
-            type="file" 
-            accept=".xlsx, .xls" 
-            ref={fileInputRef} 
-            onChange={handleFileUpload} 
-            className="hidden" 
+          <input
+            type="file"
+            accept=".xlsx, .xls"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            className="hidden"
           />
-          <button 
+          <button
             onClick={downloadTemplate}
             title="Baixar Modelo Excel"
             className="bg-[#1a1a1a] text-[#c8a646] p-2 rounded-full border border-white/10 hover:bg-white/5 transition-colors"
           >
             <Download size={20} />
           </button>
-          <button 
+          <button
             onClick={() => fileInputRef.current?.click()}
             title="Importar Excel"
             className="bg-[#1a1a1a] text-green-400 p-2 rounded-full border border-white/10 hover:bg-white/5 transition-colors"
           >
             <Upload size={20} />
           </button>
-          <button 
+          <button
             onClick={() => openModal()}
             title="Adicionar Novo"
             className="bg-[#c8a646] text-[#0f0f0f] p-2 rounded-full hover:bg-[#e8c666] transition-colors shadow-lg shadow-[#c8a646]/20"
@@ -397,7 +405,7 @@ export function Customers({
             className="w-full bg-[#1a1a1a] border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:border-[#c8a646] transition-colors"
           />
         </div>
-        
+
         <div className="flex space-x-2">
           <div className="relative flex-1">
             <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500" size={16} />
@@ -456,7 +464,7 @@ export function Customers({
                     <div className="text-xs text-[#c8a646] uppercase tracking-wider mt-1">{server?.name} • {plan?.name}</div>
                   </div>
                   <div className="flex space-x-2">
-                    <button 
+                    <button
                       onClick={() => {
                         const message = whatsappMessage
                           .replace('{nome}', customer.name)
@@ -470,7 +478,7 @@ export function Customers({
                               return 'Data Inválida';
                             }
                           })());
-                        
+
                         updateCustomer(customer.id, { lastNotifiedDate: format(today, 'yyyy-MM-dd') });
                         window.open(`https://wa.me/${customer.phone.replace(/\D/g, '')}?text=${encodeURIComponent(message)}`, '_blank');
                       }}
@@ -549,7 +557,7 @@ export function Customers({
             <h3 className="text-xl font-bold text-white mb-6 uppercase tracking-widest">
               Renovar Plano
             </h3>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">Servidor</label>
@@ -620,7 +628,7 @@ export function Customers({
                   className="w-full bg-[#0f0f0f] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#c8a646]"
                 />
               </div>
-              
+
               <div>
                 <label className="block text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">WhatsApp</label>
                 <div className="relative">

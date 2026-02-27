@@ -21,13 +21,12 @@ import { Session } from '@supabase/supabase-js';
 export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>('dashboard');
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const store = useStore();
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
-      setLoading(false);
+      setAuthLoading(false);
     });
 
     const {
@@ -39,10 +38,14 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  if (loading) {
+  const store = useStore(session?.user?.id);
+
+  if (authLoading || (session && store.loading)) {
     return (
       <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center">
-        <div className="text-[#c8a646] animate-pulse font-bold tracking-widest uppercase">Carregando...</div>
+        <div className="text-[#c8a646] animate-pulse font-bold tracking-widest uppercase">
+          {authLoading ? 'Autenticando...' : 'Carregando Dados...'}
+        </div>
       </div>
     );
   }

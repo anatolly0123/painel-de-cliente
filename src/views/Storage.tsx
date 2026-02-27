@@ -3,6 +3,7 @@ import { Database, Download, Upload, Trash2, HardDrive, Calendar as CalendarIcon
 import { Customer, Server, Plan, Renewal, ManualAddition } from '../types';
 import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth, subMonths, addMonths } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { supabase } from '../lib/supabase';
 
 interface StorageProps {
   customers: Customer[];
@@ -92,6 +93,85 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
     }
   };
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const syncLocalToCloud = async () => {
+    if (!confirm('Deseja enviar seus dados locais para a nuvem? Isso pode sobrescrever dados existentes.')) return;
+
+    setIsSyncing(true);
+    try {
+      // 1. Servers
+      const localServers = JSON.parse(localStorage.getItem('arf_servers') || '[]');
+      for (const s of localServers) {
+        // Remove internal ID if it's not a UUID or if we want Supabase to generate it
+        const { id, ...data } = s;
+        await supabase.from('servers').upsert([{ ...data, user_id: (await supabase.auth.getUser()).data.user?.id }]);
+      }
+
+      // 2. Plans
+      const localPlans = JSON.parse(localStorage.getItem('arf_plans') || '[]');
+      for (const p of localPlans) {
+        const { id, ...data } = p;
+        await supabase.from('plans').upsert([{ ...data, user_id: (await supabase.auth.getUser()).data.user?.id }]);
+      }
+
+      // 3. Customers
+      const localCustomers = JSON.parse(localStorage.getItem('arf_customers') || '[]');
+      for (const c of localCustomers) {
+        const dbCustomer = {
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          name: c.name,
+          phone: c.phone,
+          server_id: c.serverId,
+          plan_id: c.planId,
+          amount_paid: c.amountPaid,
+          due_date: c.dueDate,
+          last_notified_date: c.lastNotifiedDate
+        };
+        await supabase.from('customers').upsert([dbCustomer]);
+      }
+
+      // 4. Renewals
+      const localRenewals = JSON.parse(localStorage.getItem('arf_renewals') || '[]');
+      for (const r of localRenewals) {
+        const dbRenewal = {
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          customer_id: r.customerId,
+          server_id: r.serverId,
+          plan_id: r.planId,
+          amount: r.amount,
+          cost: r.cost,
+          date: r.date
+        };
+        await supabase.from('renewals').upsert([dbRenewal]);
+      }
+
+      // 5. Manual Additions
+      const localAdditions = JSON.parse(localStorage.getItem('arf_manual_additions') || '[]');
+      for (const a of localAdditions) {
+        const { id, ...data } = a;
+        await supabase.from('manual_additions').upsert([{ ...data, user_id: (await supabase.auth.getUser()).data.user?.id }]);
+      }
+
+      // 6. Settings
+      const localMsg = localStorage.getItem('arf_message_v2');
+      if (localMsg) {
+        await supabase.from('settings').upsert({
+          user_id: (await supabase.auth.getUser()).data.user?.id,
+          whatsapp_message: localMsg
+        });
+      }
+
+      alert('Dados sincronizados com a nuvem com sucesso!');
+      window.location.reload();
+    } catch (error) {
+      console.error('Migration error:', error);
+      alert('Erro ao sincronizar dados. Tente novamente.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const [showRawData, setShowRawData] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(new Date());
 
@@ -111,11 +191,11 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
       return isWithinInterval(aDate, { start, end });
     });
 
-    const gross = monthRenewals.reduce((acc, r) => acc + r.amount, 0) + 
-                  monthAdditions.filter(a => a.amount > 0).reduce((acc, a) => acc + a.amount, 0);
-                  
-    const cost = monthRenewals.reduce((acc, r) => acc + (r.cost || 0), 0) + 
-                 Math.abs(monthAdditions.filter(a => a.amount < 0).reduce((acc, a) => acc + a.amount, 0));
+    const gross = monthRenewals.reduce((acc, r) => acc + r.amount, 0) +
+      monthAdditions.filter(a => a.amount > 0).reduce((acc, a) => acc + a.amount, 0);
+
+    const cost = monthRenewals.reduce((acc, r) => acc + (r.cost || 0), 0) +
+      Math.abs(monthAdditions.filter(a => a.amount < 0).reduce((acc, a) => acc + a.amount, 0));
 
     return {
       gross,
@@ -134,8 +214,8 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
             <h2 className="text-xl font-bold text-white uppercase tracking-widest">Faturamento</h2>
           </div>
           <div className="bg-[#0f0f0f] rounded-xl px-4 py-3 border border-white/5 w-full">
-            <input 
-              type="month" 
+            <input
+              type="month"
               value={format(selectedMonth, 'yyyy-MM')}
               onChange={(e) => {
                 if (e.target.value) {
@@ -211,6 +291,20 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
         </div>
 
         <div className="space-y-3">
+          <button
+            onClick={syncLocalToCloud}
+            disabled={isSyncing}
+            className={`w-full flex items-center justify-between p-4 bg-[#c8a646]/10 border border-[#c8a646]/20 rounded-2xl hover:bg-[#c8a646]/20 transition-colors group ${isSyncing ? 'opacity-50 cursor-not-allowed' : ''}`}
+          >
+            <div className="flex items-center space-x-3">
+              <Upload size={20} className="text-[#c8a646]" />
+              <div className="text-left">
+                <div className="text-sm font-bold text-white">{isSyncing ? 'Sincronizando...' : 'Sincronizar com Nuvem'}</div>
+                <div className="text-[10px] text-gray-500 uppercase tracking-wider">Enviar dados locais para o Supabase</div>
+              </div>
+            </div>
+          </button>
+
           <button
             onClick={handleExportAll}
             className="w-full flex items-center justify-between p-4 bg-white/5 border border-white/10 rounded-2xl hover:bg-white/10 transition-colors group"
@@ -298,7 +392,7 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
             <span className="text-white font-mono">{manualAdditions.length}</span>
           </div>
           <div className="pt-4 border-t border-white/5 text-[10px] text-gray-600 leading-relaxed">
-            Os dados são armazenados localmente no seu navegador (LocalStorage). 
+            Os dados são armazenados localmente no seu navegador (LocalStorage).
             Recomendamos exportar um backup regularmente para evitar perda de dados se o cache do navegador for limpo.
           </div>
         </div>
