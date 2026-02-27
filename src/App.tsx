@@ -1,5 +1,4 @@
-// VERSÃO: 2.0 - LIMPEZA NUCLEAR DE IMPORTS
-// ESTA VERSÃO NÃO CONTÉM REWENEWALS
+// VERSÃO: 3.0 - LIMPEZA DEFINITIVA (Vercel Fix)
 import { useState } from 'react';
 import { Customer, Server, Plan } from './types';
 import { Dashboard } from './views/Dashboard';
