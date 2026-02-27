@@ -4,11 +4,8 @@ import { Dashboard } from './views/Dashboard';
 import { Customers } from './views/Customers';
 import { Servers } from './views/Servers';
 import { Plans } from './views/Plans';
-import { Renewals } from './views/Renewals';
-import { Additions } from './views/Additions';
-import { Settings } from './views/Settings';
 import { Storage } from './views/Storage';
-import { Layout, Users, Server as ServerIcon, Receipt, Settings as SettingsIcon, LayoutDashboard, History, PlusSquare, Database } from 'lucide-react';
+import { Layout, Users, Server as ServerIcon, Receipt, LayoutDashboard, Database } from 'lucide-react';
 import { useStore } from './store';
 import { AnimatePresence, motion } from 'framer-motion';
 
@@ -45,10 +42,12 @@ function App() {
             customers={customers}
             servers={servers}
             plans={plans}
+            whatsappMessage={whatsappMessage}
             addCustomer={addCustomer}
             updateCustomer={updateCustomer}
             deleteCustomer={deleteCustomer}
             bulkUpdateCustomers={bulkUpdateCustomers}
+            addRenewal={addRenewal}
           />
         );
       case 'servers':
@@ -66,26 +65,11 @@ function App() {
         return (
           <Plans
             plans={plans}
-            addPlan={addPlan}
-            updatePlan={updatePlan}
-            deletePlan={deletePlan}
-          />
-        );
-      case 'renewals':
-        return (
-          <Renewals
-            renewals={renewals}
-            customers={customers}
-            servers={servers}
-          />
-        );
-      case 'additions':
-        return (
-          <Additions
-            manualAdditions={manualAdditions}
+            updatePlan={(id, price) => updatePlan(id, { defaultPrice: price })}
+            whatsappMessage={whatsappMessage}
+            setWhatsappMessage={setWhatsappMessage}
             addManualAddition={addManualAddition}
-            updateManualAddition={updateManualAddition}
-            deleteManualAddition={deleteManualAddition}
+            manualAdditions={manualAdditions}
           />
         );
       case 'storage':
@@ -103,13 +87,6 @@ function App() {
             setManualAdditions={setManualAdditions}
           />
         );
-      case 'settings':
-        return (
-          <Settings
-            whatsappMessage={whatsappMessage}
-            onUpdate={setWhatsappMessage}
-          />
-        );
       default:
         return <Dashboard customers={customers} servers={servers} plans={plans} whatsappMessage={whatsappMessage} updateCustomer={updateCustomer} renewals={renewals} addRenewal={addRenewal} manualAdditions={manualAdditions} />;
     }
@@ -118,12 +95,9 @@ function App() {
   const menuItems = [
     { id: 'dashboard', label: 'Início', icon: LayoutDashboard },
     { id: 'customers', label: 'Clientes', icon: Users },
-    { id: 'renewals', label: 'Histórico', icon: History },
-    { id: 'additions', label: 'Ganhos', icon: PlusSquare },
     { id: 'servers', label: 'Servidores', icon: ServerIcon },
-    { id: 'plans', label: 'Planos', icon: Receipt },
+    { id: 'plans', label: 'Planos/Setup', icon: Receipt },
     { id: 'storage', label: 'Dados', icon: Database },
-    { id: 'settings', label: 'WhatsApp', icon: SettingsIcon },
   ];
 
   return (
@@ -143,8 +117,8 @@ function App() {
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={`w-full flex items-center space-x-3 px-4 py-3 rounded-2xl transition-all duration-300 ${activeTab === item.id
-                  ? 'bg-[#c8a646] text-[#0f0f0f] font-bold shadow-lg shadow-[#c8a646]/20'
-                  : 'text-gray-400 hover:bg-white/5 hover:text-white'
+                ? 'bg-[#c8a646] text-[#0f0f0f] font-bold shadow-lg shadow-[#c8a646]/20'
+                : 'text-gray-400 hover:bg-white/5 hover:text-white'
                 }`}
             >
               <item.icon size={20} />
@@ -182,7 +156,7 @@ function App() {
 
       {/* Bottom Nav Mobile */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-[#1a1a1a]/80 backdrop-blur-2xl border-t border-white/10 flex justify-around p-4 z-20">
-        {menuItems.slice(0, 5).map((item) => (
+        {menuItems.map((item) => (
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id)}
