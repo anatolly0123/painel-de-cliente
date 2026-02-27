@@ -1,3 +1,4 @@
+// Versão: 1.5.1 - Limpeza de imports
 import { useState } from 'react';
 import { Customer, Server, Plan } from './types';
 import { Dashboard } from './views/Dashboard';
