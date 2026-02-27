@@ -17,6 +17,12 @@ interface CustomersProps {
   addRenewal: (r: Omit<Renewal, 'id'>) => void;
 }
 
+// Utility to parse YYYY-MM-DD safely as local midnight
+const parseLocalDate = (dateStr: string) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+
 export function Customers({
   customers, servers, plans, whatsappMessage,
   addCustomer, updateCustomer, deleteCustomer,
@@ -135,35 +141,35 @@ export function Customers({
     reader.onload = (event) => {
       try {
         const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+        const workbook = XLSX.read(data, { type: 'array', cellDates: true });
         const firstSheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[firstSheetName];
 
         // Use raw objects to allow flexible parsing of both strings and numbers
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { raw: false, defval: '' }) as any[];
+        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' }) as any[];
 
         const newCustomers: Customer[] = [];
         const newRenewals: Omit<Renewal, 'id'>[] = [];
 
         jsonData.forEach((row) => {
           // Flexible header matching in case user slightly changes case
-          const getField = (possibleNames: string[]) => {
+          const getFieldValue = (possibleNames: string[]) => {
             for (const name of possibleNames) {
               for (const key in row) {
                 if (key.toLowerCase().includes(name.toLowerCase())) {
-                  return row[key] ? String(row[key]).trim() : '';
+                  return row[key];
                 }
               }
             }
             return '';
           };
 
-          const nome = getField(['Nome']);
-          const telefoneRaw = getField(['Telefone', 'Celular', 'WhatsApp']);
-          const servidorNome = getField(['Servidor']);
-          const planoNome = getField(['Plano']);
-          const valorRaw = getField(['Valor', 'Preço']);
-          const vencimentoRaw = getField(['Vencimento', 'Data', 'Vence']);
+          const nome = String(getFieldValue(['Nome']) || '').trim();
+          const telefoneRaw = String(getFieldValue(['Telefone', 'Celular', 'WhatsApp']) || '').trim();
+          const servidorNome = String(getFieldValue(['Servidor']) || '').trim();
+          const planoNome = String(getFieldValue(['Plano']) || '').trim();
+          const valorRaw = String(getFieldValue(['Valor', 'Preço']) || '').trim();
+          const vencimentoRaw = getFieldValue(['Vencimento', 'Data', 'Vence']);
 
           if (!nome) return; // Skip empty rows
 
@@ -193,25 +199,30 @@ export function Customers({
 
           // Parse Date
           let dueDate = format(addMonths(new Date(), planMonths), 'yyyy-MM-dd');
-          if (vencimentoRaw) {
+
+          if (vencimentoRaw instanceof Date) {
+            // SheetJS dates can have timezone offsets. For "due dates", we just want the calendar date.
+            // We use the Date object properties to get the actual numbers.
+            const day = vencimentoRaw.getDate();
+            const month = vencimentoRaw.getMonth() + 1;
+            const year = vencimentoRaw.getFullYear();
+            dueDate = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          } else if (vencimentoRaw) {
             const vencStr = String(vencimentoRaw).trim();
             // Handle DD/MM/YYYY format string
             const parts = vencStr.split('/');
             if (parts.length === 3) {
-              const day = parseInt(parts[0], 10);
-              const month = parseInt(parts[1], 10) - 1; // 0-indexed
-              const year = parseInt(parts[2], 10);
-              const parsedDate = new Date(year, month, day);
-              if (!isNaN(parsedDate.getTime())) {
-                dueDate = format(parsedDate, 'yyyy-MM-dd');
-              }
+              const day = String(parts[0]).padStart(2, '0');
+              const month = String(parts[1]).padStart(2, '0');
+              const year = parts[2];
+              dueDate = `${year}-${month}-${day}`;
             } else if (!isNaN(Number(vencStr))) {
               // Handle Excel serial date (number)
               const parsedDate = XLSX.SSF.parse_date_code(Number(vencStr));
-              const dateObj = new Date(parsedDate.y, parsedDate.m - 1, parsedDate.d);
-              if (!isNaN(dateObj.getTime())) {
-                dueDate = format(dateObj, 'yyyy-MM-dd');
-              }
+              const day = String(parsedDate.d).padStart(2, '0');
+              const month = String(parsedDate.m).padStart(2, '0');
+              const year = parsedDate.y;
+              dueDate = `${year}-${month}-${day}`;
             }
           }
 
@@ -311,7 +322,7 @@ export function Customers({
       const customer = customers.find(c => c.id === renewData.customerId);
       const plan = plans.find(p => p.id === renewData.planId);
       if (customer && plan) {
-        const currentDueDate = parseISO(customer.dueDate);
+        const currentDueDate = parseLocalDate(customer.dueDate);
         const isActive = isAfter(currentDueDate, today) || differenceInDays(currentDueDate, today) === 0;
 
         // If active, add to current due date. If expired, add to today.
@@ -348,7 +359,7 @@ export function Customers({
         c.phone.includes(searchQuery);
       const matchesServer = serverFilter === 'all' || c.serverId === serverFilter;
 
-      const dueDate = parseISO(c.dueDate);
+      const dueDate = parseLocalDate(c.dueDate);
       const isActive = isAfter(dueDate, today) || differenceInDays(dueDate, today) === 0;
       const status = isActive ? 'Ativo' : 'Vencido';
       const matchesStatus = statusFilter === 'all' || status.toLowerCase() === statusFilter;
@@ -472,7 +483,7 @@ export function Customers({
                           .replace('{dias}', daysDiff === 0 ? 'hoje' : `${daysDiff} dias`)
                           .replace('{vencimento}', (() => {
                             try {
-                              const d = parseISO(customer.dueDate);
+                              const d = parseLocalDate(customer.dueDate);
                               return isNaN(d.getTime()) ? 'Data Inválida' : format(d, 'dd/MM/yyyy');
                             } catch {
                               return 'Data Inválida';
@@ -505,7 +516,8 @@ export function Customers({
                     <span className={!isActive ? 'text-red-400 font-medium' : daysDiff <= 7 ? 'text-yellow-500 font-medium' : ''}>
                       {(() => {
                         try {
-                          return isNaN(dueDate.getTime()) ? 'Data Inválida' : format(dueDate, 'dd/MM/yyyy');
+                          const d = parseLocalDate(customer.dueDate);
+                          return isNaN(d.getTime()) ? 'Data Inválida' : format(d, 'dd/MM/yyyy');
                         } catch {
                           return 'Data Inválida';
                         }

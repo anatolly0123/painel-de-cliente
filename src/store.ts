@@ -40,18 +40,27 @@ export function useStore(userId: string | undefined) {
       ]);
 
       setServers(srv || []);
-      
-      let finalPlans = pln || [];
-      if (finalPlans.length === 0) {
-        // If no plans in cloud, use default and sync if needed
-        finalPlans = DEFAULT_PLANS;
-      }
-      setPlans(finalPlans);
-      
+
+      const serverIds = (srv || []).map(s => s.id);
+
+      // Ensure 'Gratuito' and other default plans exist or are merged
+      let cloudPlans = pln || [];
+      const mergedPlans = [...DEFAULT_PLANS];
+
+      cloudPlans.forEach(cp => {
+        const index = mergedPlans.findIndex(p => p.name === cp.name);
+        if (index !== -1) {
+          mergedPlans[index] = { ...mergedPlans[index], ...cp };
+        } else {
+          mergedPlans.push(cp);
+        }
+      });
+      setPlans(mergedPlans);
+
       setCustomers(cust || []);
       setRenewals(ren || []);
       setManualAdditions(manual || []);
-      
+
       const defaultMsg = 'Olá *{nome}*! 👋\n\nPassando para lembrar que seu acesso vence em *{dias}* (dia *{vencimento}*).\n\nO valor para renovação é de *{valor}*.\n\nPodemos confirmar sua renovação para garantir que você não fique sem sinal? 😊';
       setWhatsappMessage(settings?.whatsapp_message || defaultMsg);
     } catch (error) {

@@ -103,31 +103,34 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
       // 1. Servers
       const localServers = JSON.parse(localStorage.getItem('arf_servers') || '[]');
       for (const s of localServers) {
-        // Remove internal ID if it's not a UUID or if we want Supabase to generate it
-        const { id, ...data } = s;
-        await supabase.from('servers').upsert([{ ...data, user_id: (await supabase.auth.getUser()).data.user?.id }]);
+        await supabase.from('servers').upsert([{ ...s, user_id: (await supabase.auth.getUser()).data.user?.id }]);
       }
 
       // 2. Plans
       const localPlans = JSON.parse(localStorage.getItem('arf_plans') || '[]');
       for (const p of localPlans) {
-        const { id, ...data } = p;
-        await supabase.from('plans').upsert([{ ...data, user_id: (await supabase.auth.getUser()).data.user?.id }]);
+        await supabase.from('plans').upsert([{ ...p, user_id: (await supabase.auth.getUser()).data.user?.id }]);
       }
 
       // 3. Customers
       const localCustomers = JSON.parse(localStorage.getItem('arf_customers') || '[]');
       for (const c of localCustomers) {
         const dbCustomer = {
+          ...c,
           user_id: (await supabase.auth.getUser()).data.user?.id,
-          name: c.name,
-          phone: c.phone,
           server_id: c.serverId,
           plan_id: c.planId,
           amount_paid: c.amountPaid,
           due_date: c.dueDate,
           last_notified_date: c.lastNotifiedDate
         };
+        // Remove frontend-only field names that don't match DB
+        delete (dbCustomer as any).serverId;
+        delete (dbCustomer as any).planId;
+        delete (dbCustomer as any).amountPaid;
+        delete (dbCustomer as any).dueDate;
+        delete (dbCustomer as any).lastNotifiedDate;
+
         await supabase.from('customers').upsert([dbCustomer]);
       }
 
@@ -135,22 +138,23 @@ export function Storage({ customers, servers, plans, renewals, manualAdditions, 
       const localRenewals = JSON.parse(localStorage.getItem('arf_renewals') || '[]');
       for (const r of localRenewals) {
         const dbRenewal = {
+          ...r,
           user_id: (await supabase.auth.getUser()).data.user?.id,
           customer_id: r.customerId,
           server_id: r.serverId,
-          plan_id: r.planId,
-          amount: r.amount,
-          cost: r.cost,
-          date: r.date
+          plan_id: r.planId
         };
+        delete (dbRenewal as any).customerId;
+        delete (dbRenewal as any).serverId;
+        delete (dbRenewal as any).planId;
+
         await supabase.from('renewals').upsert([dbRenewal]);
       }
 
       // 5. Manual Additions
       const localAdditions = JSON.parse(localStorage.getItem('arf_manual_additions') || '[]');
       for (const a of localAdditions) {
-        const { id, ...data } = a;
-        await supabase.from('manual_additions').upsert([{ ...data, user_id: (await supabase.auth.getUser()).data.user?.id }]);
+        await supabase.from('manual_additions').upsert([{ ...a, user_id: (await supabase.auth.getUser()).data.user?.id }]);
       }
 
       // 6. Settings
